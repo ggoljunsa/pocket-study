@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>기말 1바퀴 진행률</title>
+<style>
+  :root { --bg:#f6f7fb; --card:#fff; --ink:#1f2430; --mut:#7a8194; --line:#e5e8f0; --acc:#3b6fd8; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#14161c; --card:#1d2029; --ink:#e8eaf0; --mut:#9097a8; --line:#2c303b; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; }
+  main { max-width:760px; margin:0 auto; padding:20px 16px 48px; }
+  h1 { font-size:22px; margin:4px 0 2px; }
+  .sub { color:var(--mut); font-size:13px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; margin-top:14px; }
+  .big { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
+  .big b { font-size:40px; letter-spacing:-1px; }
+  .bar { height:12px; background:var(--line); border-radius:6px; overflow:hidden; position:relative; }
+  .bar i { display:block; height:100%; border-radius:6px; transition:width .6s; }
+  .bar.thin { height:7px; }
+  .half { position:absolute; left:50%; top:-3px; bottom:-3px; border-left:2px dashed var(--mut); opacity:.6; }
+  .row { display:flex; justify-content:space-between; gap:10px; font-size:14px; margin:12px 0 5px; }
+  .row .t { font-weight:700; }
+  .row .n { color:var(--mut); white-space:nowrap; font-variant-numeric:tabular-nums; }
+  details { margin-top:6px; }
+  summary { cursor:pointer; color:var(--mut); font-size:13px; }
+  .unit { margin:10px 0 0 4px; }
+  .unit > .row { margin-top:8px; font-size:13.5px; }
+  .les { margin-left:12px; }
+  .les .row { font-size:12.5px; margin:6px 0 3px; }
+  .les .row .t { font-weight:500; }
+  .days { display:flex; align-items:flex-end; gap:8px; height:110px; margin-top:8px; }
+  .day { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%; font-size:11px; color:var(--mut); }
+  .day .stack { width:100%; max-width:46px; display:flex; flex-direction:column-reverse; border-radius:5px; overflow:hidden; }
+  .day .v { font-weight:700; color:var(--ink); margin-bottom:2px; }
+  .legend { display:flex; gap:12px; flex-wrap:wrap; font-size:12px; color:var(--mut); margin-top:8px; }
+  .legend span::before { content:""; display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:4px; background:var(--c); vertical-align:-1px; }
+  .acc { font-size:12px; color:var(--mut); }
+  .live { display:inline-block; width:8px; height:8px; border-radius:50%; background:#2e9e4f; margin-right:6px; vertical-align:1px; }
+  .live.off { background:var(--mut); }
+</style>
+</head>
+<body>
+<main>
+  <h1>기말 1바퀴 진행률</h1>
+  <div class="sub" id="upd">불러오는 중…</div>
+  <div id="app"></div>
+</main>
+<script>
+var COL = { os: '#3b6fd8', algo: '#d6465f', cn: '#2e9e4f', psy: '#e09a40' };
+function pct(a, b) { return b ? Math.round(a / b * 1000) / 10 : 0; }
+function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+function bar(p, c, thin) { return '<div class="bar' + (thin ? ' thin' : '') + '"><i style="width:' + Math.min(100, p) + '%;background:' + c + '"></i>' + (thin ? '' : '<span class="half"></span>') + '</div>'; }
+function ago(t) {
+  var m = Math.round((Date.now() - t) / 60000);
+  if (m < 1) return '방금'; if (m < 60) return m + '분 전';
+  var h = Math.round(m / 60); if (h < 24) return h + '시간 전'; return Math.round(h / 24) + '일 전';
+}
+function kst(t) { return new Date(t + 9 * 3600e3).toISOString().slice(0, 10); }
+function render(d) {
+  var S = 0, T = 0; d.courses.forEach(function (c) { S += c.seen; T += c.total; });
+  var today = d.days[kst(Date.now())] || {}, todayN = 0; Object.keys(today).forEach(function (k) { todayN += today[k]; });
+  var active = Date.now() - d.lastActive < 20 * 60000;
+  document.getElementById('upd').innerHTML = '<span class="live' + (active ? '' : ' off') + '"></span>' +
+    (active ? '지금 공부 중 · ' : '') + '마지막 학습 ' + ago(d.lastActive) + ' · 집계 ' + ago(d.generatedAt);
+  var h = '<div class="card"><div class="big"><b>' + pct(S, T) + '%</b><span class="sub">' + S + ' / ' + T + ' 문항 · 오늘 새로 ' + todayN + '개</span></div>' +
+    bar(pct(S, T), 'linear-gradient(90deg,#3b6fd8,#2e9e4f)') + '<div class="sub" style="margin-top:4px">점선 = 50%</div>';
+  // 최근 7일
+  var keys = [], now = Date.now();
+  for (var i = 6; i >= 0; i--) keys.push(kst(now - i * 86400e3));
+  var mx = 1; keys.forEach(function (k) { var s = 0, o = d.days[k] || {}; Object.keys(o).forEach(function (c) { s += o[c]; }); mx = Math.max(mx, s); });
+  h += '<div class="days">';
+  keys.forEach(function (k) {
+    var o = d.days[k] || {}, s = 0, st = '';
+    d.courses.forEach(function (c) { var v = o[c.id] || 0; s += v; if (v) st += '<div style="height:' + (v / mx * 80) + 'px;background:' + COL[c.id] + '"></div>'; });
+    h += '<div class="day"><span class="v">' + (s || '') + '</span><div class="stack">' + st + '</div>' + k.slice(5).replace('-', '/') + '</div>';
+  });
+  h += '</div><div class="legend">' + d.courses.map(function (c) { return '<span style="--c:' + COL[c.id] + '">' + esc(c.title.replace(' 기말', '')) + '</span>'; }).join('') + '</div></div>';
+  // 과목
+  d.courses.forEach(function (c) {
+    h += '<div class="card"><div class="row"><span class="t">' + esc(c.title) + '</span><span class="n">' + c.seen + '/' + c.total + ' · ' + pct(c.seen, c.total) + '%</span></div>' +
+      bar(pct(c.seen, c.total), COL[c.id]) +
+      '<div class="acc" style="margin-top:6px">첫 시도 정답률 ' + (c.tried ? Math.round(c.ok / c.tried * 100) + '%' : '—') + (today[c.id] ? ' · 오늘 새로 ' + today[c.id] + '개' : '') + '</div>' +
+      '<details><summary>단원 · 레슨별 보기</summary>';
+    c.units.forEach(function (u) {
+      h += '<div class="unit"><div class="row"><span class="t">' + esc(u.title) + '</span><span class="n">' + u.seen + '/' + u.total + (u.tried ? ' · 정답 ' + Math.round(u.ok / u.tried * 100) + '%' : '') + '</span></div>' + bar(pct(u.seen, u.total), COL[c.id], true) + '<div class="les">';
+      u.lessons.forEach(function (l) {
+        h += '<div class="row"><span class="t">' + esc(l.title) + '</span><span class="n">' + (l.seen >= l.total ? '✓ ' : '') + l.seen + '/' + l.total + (l.tried ? ' · ' + Math.round(l.ok / l.tried * 100) + '%' : '') + '</span></div>' + bar(pct(l.seen, l.total), COL[c.id] + '99', true);
+      });
+      h += '</div></div>';
+    });
+    h += '</details></div>';
+  });
+  document.getElementById('app').innerHTML = h;
+}
+var open = {};
+function load() {
+  document.querySelectorAll('details').forEach(function (x, i) { open[i] = x.open; });
+  fetch('progress.json?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (d) {
+    render(d);
+    document.querySelectorAll('details').forEach(function (x, i) { if (open[i]) x.open = true; });
+  }).catch(function () { document.getElementById('upd').textContent = '불러오기 실패 — 잠시 후 다시'; });
+}
+load(); setInterval(load, 60000);
+</script>
+</body>
+</html>
